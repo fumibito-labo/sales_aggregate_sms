@@ -78,24 +78,40 @@ def main():
         3. 支払手段が「振込」「その他」「アプリデモ」ではない 
         """
         st.markdown(markdown)
+    st.subheader('請求データ金額')
+    container = st.container()
+    col1, col2 = container.columns(2)
+
+
+
 
     st.sidebar.title('File Uploader')
-
     sms_uploaded_file = st.sidebar.file_uploader('SMS請求データを選択してください(.csv)', type='csv')
+
+    # SMS売上の読み込み
+    if sms_uploaded_file is not None:
+        sms_df = get_dataframe(sms_uploaded_file)
+
+        load_sales = sms_df['SEIKYU_TOTAL'].sum()
+        col1.metric('SMS請求額', f'{load_sales:,}円')
+
+
     shokki_uploaded_file = st.sidebar.file_uploader('織機請求データを選択してください(.csv)', type='csv')
+
+    # 織機売上の読み込み
+    if shokki_uploaded_file is not None:
+        shokki_df = get_dataframe(shokki_uploaded_file)
+        shokki_df = shokki_overwrite(shokki_df)
+
+        load_sales_shokki = shokki_df['SEIKYU_TOTAL'].sum()
+        col2.metric('織機天引請求額', f'{load_sales_shokki:,}円')
+
+
+
     aggregation_btn = st.sidebar.button('集計')
 
     # サイドバーの集計ボタンを押した際の処理設定
     if aggregation_btn:
-
-        # SMS売上の読み込み
-        if sms_uploaded_file is not None:
-            sms_df = get_dataframe(sms_uploaded_file)
-
-        # 織機売上の読み込み
-        if shokki_uploaded_file is not None:
-            shokki_df = get_dataframe(shokki_uploaded_file)
-            shokki_df = shokki_overwrite(shokki_df)
 
         # 前準備
         _df = pd.concat([sms_df, shokki_df])
