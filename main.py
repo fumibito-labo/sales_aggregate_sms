@@ -1,3 +1,4 @@
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -80,6 +81,23 @@ def calc_aggregation(df):
 def convert_df_to_csv(df, index=True):
     return df.to_csv().encode('cp932')
 
+@st.cache
+def load_file(sms, shokki):
+    #２つのファイルが読み込まれた時点でデータ連結処理と支払手段の抽出を実行
+    if sms is not None and shokki is not None:
+        # SMS請求ファイルの読込
+        sms_df = get_dataframe(sms)
+
+        # 織機天引きファイルの読込
+        shokki_df = get_dataframe(shokki)
+        # 支払方法 -> 織機給与天引へ　書き換え
+        shokki_df = shokki_overwrite(shokki_df)
+
+        # 前準備（科目コードカラム追加＆データ連結
+        df_result = concat_df(sms_df, shokki_df)
+        return df_result
+
+
 
 def main():
     """
@@ -90,66 +108,56 @@ def main():
     # ヘッダーセクション（ファイルアップロード ）
     st.title('Sales Aggregation App for SMS')
 
-    # ファイルアップローダー
-    upload_container = st.container()
-    upload_container.write('集計用のファイルをアップロードしてください')
-    head_col1, head_col2 = upload_container.columns(2)
+    # sidebar : ファイルアップローダー
+    side_header = st.sidebar.container()
+    side_header.write('集計用のファイルをアップロードしてください')
+    head_col1, head_col2 = side_header.columns(2)
 
-    sms_uploaded_file = head_col1.file_uploader('file: keiri_sms_after_detail', type='csv')
-    shokki_uploaded_file = head_col2.file_uploader('file: keiri_shokki_after_detail', type='csv')
+    sms_uploaded_file = head_col1.file_uploader('SMS請求金額', type='csv')
+    shokki_uploaded_file = head_col2.file_uploader('織機給与天引請求額', type='csv')
 
-    # SMS売上の読み込み
-    if sms_uploaded_file is not None:
-        sms_df = get_dataframe(sms_uploaded_file)
+    # ファイルの結合 と 科目コード情報カラムの追加
+    concat_d = load_file(sms_uploaded_file, shokki_uploaded_file)
 
-    # 織機売上の読み込み
-    if shokki_uploaded_file is not None:
-        shokki_df = get_dataframe(shokki_uploaded_file)
-        shokki_df = shokki_overwrite(shokki_df)
 
-    # セクション 条件
-    container_selector = st.container()
+    # sidebar: 条件選択枠の設置
+    side_selector = st.sidebar.container()
 
-    # ２つのファイルが読み込まれた時点でデータ連結処理と支払手段の抽出を実行
-    if sms_uploaded_file is not None and shokki_uploaded_file is not None:
+    if concat_d is not None:
 
-        # 前準備（科目コードカラム追加＆データ連結
-        concat_d = concat_df(sms_df, shokki_df)
-
-        # 連結データから、支払手段のリストを取得
+        # 全データから 支払方法の一覧を取得
         options_method = get_payment_method(concat_d)
+        # デフォルトの支払方法をリストとして作成
         default_select = [i for i in options_method if i not in target_excluding_payment]
 
-        with container_selector.expander('支払手段の選択について'):
+
+        # 注意書きメモ表示
+        with side_selector.expander('⚠ 支払手段の選択について'):
             markdown = """
-            「振込」「アプリデモ」「貸倒処理済み」「口座封鎖」「その他」は除外
+            SMSとは別で請求しているものや、請求対象外のものは除外
+            
+            例：振込/アプリデモ/貸倒処理済み/口座封鎖/その他
             """
             st.markdown(markdown)
-
-        options = container_selector.multiselect(
+        # フィルター条件のマルチセレクトフィールド
+        options = side_selector.multiselect(
             '対象の支払手段を選択してください',
             options_method,
             default_select
         )
 
-        # 表示ボタン（トリガー）
-        col_btn1, col_btn2, col_btn3 = container_selector.columns(3)
-        filter_advance_recieved = col_btn2.checkbox('年払いを含める')
-        filter_account_code = col_btn3.checkbox('売上対象外を含める')
-        aggregation_btn = col_btn1.button('データ表示')
+        # 追加条件（チェックボックス）
+        col_btn1, col_btn2 = side_selector.columns(2)
+        filter_advance_recieved = col_btn1.checkbox('年払請求を含')
+        filter_account_code = col_btn2.checkbox('売上対象外を含める')
 
+        # プレビュー表示ボタン
+        preview_btn = col_btn1.button('データ表示')
 
-        # 集計ボタンを押した際の処理設定
-        if aggregation_btn:
-            st.session_state.key = 3
-            st.write('データ取得')
+        # プレビューボタン の処理設定
+        if preview_btn:
 
-            try:
-                st.text(f'state:{st.session_state.key}')
-            except AttributeError:
-                # st.session_state.state に値が保存されていないときのみ最初の読込と判断して初期化
-                st.session_state.key = 1
-
+            # 抽出条件の分岐
             # すべてのデータを含めるパターン
             if filter_advance_recieved and filter_account_code:
                 df_target = concat_d.query('MEI_NAME_V in @options')
@@ -169,17 +177,21 @@ def main():
                 df_subset = df_subset.query('HEAD_CD != "9999"')
                 df_target = df_subset.query('KAI_CYCLE <= 1')
 
-
+            # メインセクション
             container_main = st.container()
             container_main.write('---')
+            # Data Preview
             container_main.header('Data Preview')
             container_main.write('適宜データを確認してください')
-            # Data Preview
+
+            # Previewデータの表示
             container_main.dataframe(df_target)
-            outout_preview_data = convert_df_to_csv(df_target)
+
+            # PreviewデータのCSVファイル作成
+            output_preview_data = convert_df_to_csv(df_target)
             container_main.download_button(
-                label='Download Data',
-                data=outout_preview_data,
+                label='Download',
+                data=output_preview_data,
                 file_name='detail_all.csv',
                 mime='text/csv'
             )
@@ -190,15 +202,15 @@ def main():
             container_summary.subheader('データサマリ')
             main_col1, main_col2 = container_summary.columns(2)
 
-            # 発生総額の取得
+            # 発生総額表示
             seikyu_total = df_target['SEIKYU_TOTAL'].sum()
             main_col1.metric('対象金額計', f'{seikyu_total:,}円')
 
-            # 請求件数
+            # 請求件数表示
             customer_total = df_target['INPUT_NO'].nunique()
             main_col1.metric('請求顧客数', f'{customer_total:,}件')
 
-            # 平均請求額
+            # 平均請求額表示
             average_price = seikyu_total / customer_total
             main_col1.metric('平均単価', f'{average_price:,.1f}円')
 
@@ -208,14 +220,27 @@ def main():
                                                values='SEIKYU_TOTAL', aggfunc=sum).reset_index()
             main_col2.dataframe(group_agg_payment)
 
-
+            # グラフ化
+            graph_data = group_agg_payment[['MEI_NAME_V', 'SEIKYU_TOTAL']]
+            base = alt.Chart(graph_data)
+            chart = base.mark_bar().encode(
+                y = alt.Y('SEIKYU_TOTAL',
+                          title='金額'
+                          ),
+                x = alt.X('MEI_NAME_V', title='支払方法'),
+                tooltip=['SEIKYU_TOTAL']
+            ).interactive().properties(height=600, title='支払手段別請求額')
+            # グラフ表示
+            container_summary.altair_chart(chart, use_container_width=True)
 
             # 結果出力セクション
             container_result = st.container()
             container_result.write('---')
             container_result.subheader('結果出力')
-
             res_col1, res_col2 = container_result.columns(2)
+
+            # 出力データの作成
+            # 結果データ
             group_agg_target = calc_aggregation(df_target)
             output_result_group = convert_df_to_csv(group_agg_target)
             res_col1.write('支払手段別科目合計結果')
