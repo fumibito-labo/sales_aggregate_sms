@@ -2,7 +2,6 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-
 # 集計条件用パラメータ設定
 # 全体
 target_payment_all = [
@@ -81,9 +80,10 @@ def calc_aggregation(df):
 def convert_df_to_csv(df, index=True):
     return df.to_csv().encode('cp932')
 
+
 @st.cache
 def load_file(sms, shokki):
-    #２つのファイルが読み込まれた時点でデータ連結処理と支払手段の抽出を実行
+    # ２つのファイルが読み込まれた時点でデータ連結処理と支払手段の抽出を実行
     if sms is not None and shokki is not None:
         # SMS請求ファイルの読込
         sms_df = get_dataframe(sms)
@@ -96,7 +96,6 @@ def load_file(sms, shokki):
         # 前準備（科目コードカラム追加＆データ連結
         df_result = concat_df(sms_df, shokki_df)
         return df_result
-
 
 
 def main():
@@ -119,7 +118,6 @@ def main():
     # ファイルの結合 と 科目コード情報カラムの追加
     concat_d = load_file(sms_uploaded_file, shokki_uploaded_file)
 
-
     # sidebar: 条件選択枠の設置
     side_selector = st.sidebar.container()
 
@@ -129,7 +127,6 @@ def main():
         options_method = get_payment_method(concat_d)
         # デフォルトの支払方法をリストとして作成
         default_select = [i for i in options_method if i not in target_excluding_payment]
-
 
         # 注意書きメモ表示
         with side_selector.expander('⚠ 支払手段の選択について'):
@@ -146,125 +143,129 @@ def main():
             default_select
         )
 
-        # 追加条件（チェックボックス）
+        # 追加条件（チェックボックス)
         col_btn1, col_btn2 = side_selector.columns(2)
         filter_advance_recieved = col_btn1.checkbox('年払請求を含')
         filter_account_code = col_btn2.checkbox('売上対象外を含める')
 
-        # プレビュー表示ボタン
-        preview_btn = col_btn1.button('データ表示')
+        # 抽出条件の分岐
+        # すべてのデータを含めるパターン
+        if filter_advance_recieved and filter_account_code:
+            df_target = concat_d.query('MEI_NAME_V in @options')
 
-        # プレビューボタン の処理設定
-        if preview_btn:
+        # 年払い除外（売上全項目出力）
+        elif filter_advance_recieved and not filter_account_code:
+            df_subset = concat_d.query('MEI_NAME_V in @options')
+            df_target = df_subset.query('KAI_CYCLE <= 1')
 
-            # 抽出条件の分岐
-            # すべてのデータを含めるパターン
-            if filter_advance_recieved and filter_account_code:
-                df_target = concat_d.query('MEI_NAME_V in @options')
+        # 売上対象外を除く（年払含む）
+        elif not filter_advance_recieved and filter_account_code:
+            df_subset = concat_d.query('MEI_NAME_V in @options')
+            df_target = df_subset.query('HEAD_CD != "9999"')
 
-            # 年払い除外（売上全項目出力）
-            elif filter_advance_recieved and not filter_account_code:
-                df_subset = concat_d.query('MEI_NAME_V in @options')
-                df_target = df_subset.query('KAI_CYCLE <= 1')
+        else:
+            df_subset = concat_d.query('MEI_NAME_V in @options')
+            df_subset = df_subset.query('HEAD_CD != "9999"')
+            df_target = df_subset.query('KAI_CYCLE <= 1')
 
-            # 売上対象外を除く（年払含む）
-            elif not filter_advance_recieved and filter_account_code:
-                df_subset = concat_d.query('MEI_NAME_V in @options')
-                df_target = df_subset.query('HEAD_CD != "9999"')
+        # メインセクション
+        container_main = st.container()
+        container_main.write('---')
+        # Data Preview
+        container_main.header('Data Preview')
+        container_main.write('適宜データを確認してください')
 
-            else:
-                df_subset = concat_d.query('MEI_NAME_V in @options')
-                df_subset = df_subset.query('HEAD_CD != "9999"')
-                df_target = df_subset.query('KAI_CYCLE <= 1')
+        # Previewデータの表示
+        container_main.dataframe(df_target)
 
-            # メインセクション
-            container_main = st.container()
-            container_main.write('---')
-            # Data Preview
-            container_main.header('Data Preview')
-            container_main.write('適宜データを確認してください')
+        # PreviewデータのCSVファイル作成
+        output_preview_data = convert_df_to_csv(df_target)
 
-            # Previewデータの表示
-            container_main.dataframe(df_target)
+        # サマリーセクション
+        container_summary = st.container()
+        container_summary.write('---')
+        container_summary.subheader('データサマリ')
+        main_col1, main_col2 = container_summary.columns(2)
 
-            # PreviewデータのCSVファイル作成
-            output_preview_data = convert_df_to_csv(df_target)
-            container_main.download_button(
-                label='Download',
-                data=output_preview_data,
-                file_name='detail_all.csv',
-                mime='text/csv'
-            )
+        # 発生総額表示
+        seikyu_total = df_target['SEIKYU_TOTAL'].sum()
+        main_col1.metric('対象金額計', f'{seikyu_total:,}円')
 
-            # サマリーセクション
-            container_summary = st.container()
-            container_summary.write('---')
-            container_summary.subheader('データサマリ')
-            main_col1, main_col2 = container_summary.columns(2)
+        # 請求件数表示
+        customer_total = df_target['INPUT_NO'].nunique()
+        main_col1.metric('請求顧客数', f'{customer_total:,}件')
 
-            # 発生総額表示
-            seikyu_total = df_target['SEIKYU_TOTAL'].sum()
-            main_col1.metric('対象金額計', f'{seikyu_total:,}円')
+        # 平均請求額表示
+        average_price = seikyu_total / customer_total
+        main_col1.metric('平均単価', f'{average_price:,.1f}円')
 
-            # 請求件数表示
-            customer_total = df_target['INPUT_NO'].nunique()
-            main_col1.metric('請求顧客数', f'{customer_total:,}件')
+        # 支払手段ごとの金額集計
+        agg_payment_method = df_target[['MEI_NAME_V', 'ACCOUNT_CD', 'SEIKYU_TOTAL']]
+        group_agg_payment = pd.pivot_table(agg_payment_method, index=['MEI_NAME_V'],
+                                           values='SEIKYU_TOTAL', aggfunc=sum).reset_index()
+        main_col2.dataframe(group_agg_payment)
 
-            # 平均請求額表示
-            average_price = seikyu_total / customer_total
-            main_col1.metric('平均単価', f'{average_price:,.1f}円')
+        # グラフ化
+        graph_data = group_agg_payment[['MEI_NAME_V', 'SEIKYU_TOTAL']]
+        base = alt.Chart(graph_data)
+        chart = base.mark_bar().encode(
+            y=alt.Y('SEIKYU_TOTAL',
+                    title='金額'
+                    ),
+            x=alt.X('MEI_NAME_V', title='支払方法'),
+            tooltip=['SEIKYU_TOTAL']
+        ).interactive().properties(height=600, title='支払手段別請求額')
+        # グラフ表示
+        container_summary.altair_chart(chart, use_container_width=True)
 
-            # 支払手段ごとの金額集計
-            agg_payment_method = df_target[['MEI_NAME_V', 'ACCOUNT_CD', 'SEIKYU_TOTAL']]
-            group_agg_payment = pd.pivot_table(agg_payment_method, index=['MEI_NAME_V'],
-                                               values='SEIKYU_TOTAL', aggfunc=sum).reset_index()
-            main_col2.dataframe(group_agg_payment)
+        # Sidebar: 結果出力セクション
+        sidebar_result = st.sidebar.container()
+        sidebar_result.write('---')
+        sidebar_result.subheader('結果出力')
+        res_col1, res_col2 = sidebar_result.columns(2)
 
-            # グラフ化
-            graph_data = group_agg_payment[['MEI_NAME_V', 'SEIKYU_TOTAL']]
-            base = alt.Chart(graph_data)
-            chart = base.mark_bar().encode(
-                y = alt.Y('SEIKYU_TOTAL',
-                          title='金額'
-                          ),
-                x = alt.X('MEI_NAME_V', title='支払方法'),
-                tooltip=['SEIKYU_TOTAL']
-            ).interactive().properties(height=600, title='支払手段別請求額')
-            # グラフ表示
-            container_summary.altair_chart(chart, use_container_width=True)
+        # 出力データの作成
+        # 結果データ
+        group_agg_target = calc_aggregation(df_target)
+        output_result_group = convert_df_to_csv(group_agg_target)
 
-            # 結果出力セクション
-            container_result = st.container()
-            container_result.write('---')
-            container_result.subheader('結果出力')
-            res_col1, res_col2 = container_result.columns(2)
+        # 前受金計上金額の条件取得
+        advance_subset = concat_d.query('MEI_NAME_V in @options')
+        advance_subset = advance_subset.query('HEAD_CD != "9999"')
+        advance_df_target = advance_subset.query('KAI_CYCLE > 1')
 
-            # 出力データの作成
-            # 結果データ
-            group_agg_target = calc_aggregation(df_target)
-            output_result_group = convert_df_to_csv(group_agg_target)
-            res_col1.write('支払手段別科目合計結果')
-            res_col2.download_button(
-                label='Download Data',
-                data=output_result_group,
-                file_name='result.csv',
-                mime='text/csv'
-            )
+        # 科目合計
+        res_advance = calc_aggregation(advance_df_target)
+        output_advance_group = convert_df_to_csv(res_advance)
 
-            # 前受金計上金額の条件取得
-            advance_subset = concat_d.query('MEI_NAME_V in @options')
-            advance_subset = advance_subset.query('HEAD_CD != "9999"')
-            advance_df_target = advance_subset.query('KAI_CYCLE > 1')
-            # 科目合計
-            res_advance = calc_aggregation(advance_df_target)
-            output_advance_group = convert_df_to_csv(res_advance)
-            res_col1.write('前受金')
-            res_col2.download_button(
-                label='Download Data',
-                data=output_advance_group,
-                file_name='res_advance.csv',
-                mime='text/csv'
-            )
+        # ダウンロードボタン
+        res_col1.download_button(
+            label='個人サービス別データ',
+            data=output_preview_data,
+            file_name='res_all.csv',
+            mime='text/csv'
+        )
+
+        res_col2.download_button(
+            label='科目別集計データ　　',
+            data=output_result_group,
+            file_name='res.csv',
+            mime='text/csv'
+        )
+
+        res_col1.download_button(
+            label='仕訳作成用データ　　',
+            data='',
+            file_name='',
+            mime='text/csv'
+        )
+
+        res_col2.download_button(
+            label='前受収益計上用データ',
+            data=output_advance_group,
+            file_name='res_advance.csv',
+            mime='text/csv'
+        )
 
 
 if __name__ == "__main__":
