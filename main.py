@@ -240,27 +240,21 @@ def main():
 
         # ダウンロードボタン
         res_col1.download_button(
-            label='個人サービス別データ',
+            label='詳細データ(preview)',
             data=output_preview_data,
             file_name='res_all.csv',
             mime='text/csv'
         )
 
         res_col2.download_button(
-            label='科目別集計データ　　',
+            label='集計データ(仕訳用)',
             data=output_result_group,
             file_name='res.csv',
             mime='text/csv'
         )
 
-        res_col1.download_button(
-            label='仕訳作成用データ　　',
-            data='',
-            file_name='',
-            mime='text/csv'
-        )
 
-        res_col2.download_button(
+        res_col1.download_button(
             label='前受収益計上用データ',
             data=output_advance_group,
             file_name='res_advance.csv',
