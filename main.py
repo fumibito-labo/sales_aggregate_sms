@@ -242,14 +242,14 @@ def main():
         res_col1.download_button(
             label='詳細データ(preview)',
             data=output_preview_data,
-            file_name='res_all.csv',
+            file_name='詳細データ.csv',
             mime='text/csv'
         )
 
         res_col2.download_button(
             label='集計データ(仕訳用)',
             data=output_result_group,
-            file_name='res.csv',
+            file_name='仕訳集計用データ.csv',
             mime='text/csv'
         )
 
@@ -257,7 +257,7 @@ def main():
         res_col1.download_button(
             label='前受収益計上用データ',
             data=output_advance_group,
-            file_name='res_advance.csv',
+            file_name='前受収益計上用データ.csv',
             mime='text/csv'
         )
 
